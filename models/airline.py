@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-with-Commons-Clause
 # Copyright (C) 2025 Ordnay Perez Hernandez - ¡Uso comercial prohibido sin permiso!
-from .serializable import Serializable
 
-class Airline(Serializable):
+class Airline:
     def __init__(self, name : str, code : str, planes_number : int, nationality : str):
         self._name = name
         self._code = code
@@ -40,20 +39,3 @@ class Airline(Serializable):
     @nationality.setter
     def nationality(self, value : str):
         self._nationality = value
-    
-    def serialize(self) -> dict:
-        return {
-            'name' : self.name,
-            'code' : self.code,
-            'planes_number' : self.planes_number,
-            'nationality' : self.nationality
-        }
-
-    @classmethod
-    def deserialize(cls, data : dict) -> object:
-        return cls(
-            code = data['code'],
-            name = data['name'],
-            nationality = data['nationality'],
-            planes_number = data['planes_number']
-        )

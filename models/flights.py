@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-with-Commons-Clause
 # Copyright (C) 2025 Ordnay Perez Hernandez - ¡Uso comercial prohibido sin permiso!
-from .serializable import Serializable
 from .plane import Plane
 from datetime import datetime
 
-class NationalFly(Serializable):
+class NationalFly:
     def __init__(self, code : str, inner: bool, airline : str, init_city : str, end_city : str, datetime : datetime, mark : str, model : str, matr : str, capacity : int):
         self._code = code
         self._inner = inner
@@ -70,35 +69,6 @@ class NationalFly(Serializable):
     def plane(self, value : Plane):
         self._plane = value
     
-    def serialize(self):
-        d = {
-            'code' : self.code,
-            'inner' : self.inner,
-            'airline' : self.airline,
-            'init_city' : self.init_city,
-            'end_city' : self.end_city,
-            'datetime' : self.datetime.strftime("%Y/%m/%d, %H:%M:%S"),
-            'plane' : self.plane.serialize()
-        }
-        return d
-
-    @classmethod
-    def deserialize(cls, data : dict):
-        if "mark" in data.keys():
-            return Plane.deserialize(data)
-        else:
-            return cls (
-                code = data['code'],
-                inner = data['inner'],
-                airline = data['airline'],
-                init_city = data['init_city'],
-                end_city = data['end_city'],
-                datetime = datetime.strptime(data['datetime'], "%Y/%m/%d, %H:%M:%S"),
-                mark = data['plane'].mark,
-                model = data['plane'].model,
-                matr = data['plane'].matricule,
-                capacity = data['plane'].capacity
-            )
 
 class InternationalFly(NationalFly):
     def __init__(self, code : str, inner: bool, airline : str, init_city : str, end_city : str, datetime : datetime, mark : str, model : str, matr : str, capacity : int, destiny : str, scale : bool, scale_number : int):
@@ -130,31 +100,3 @@ class InternationalFly(NationalFly):
     @scale_number.setter
     def scale_number(self, value : int):
         self._scale_number = value
-    
-    def serialize(self):
-        d = super().serialize()
-        d['destiny'] = self.destiny
-        d['scale'] = self.scale
-        d['scale_number'] = self.scale_number
-        return d
-    
-    @classmethod
-    def deserialize(cls, data : dict):
-        if "mark" in data.keys():
-            return Plane.deserialize(data)
-        else:
-            return cls(
-                code = data['code'],
-                inner = data['inner'],
-                airline = data['airline'],
-                init_city = data['init_city'],
-                end_city = data['end_city'],
-                datetime = datetime.strptime(data['datetime'], "%Y/%m/%d, %H:%M:%S"),
-                mark = data['plane'].mark,
-                model = data['plane'].model,
-                matr = data['plane'].matricule,
-                capacity = data['plane'].capacity,
-                destiny = data['destiny'],
-                scale = data['scale'],
-                scale_number = data['scale_number']
-            )

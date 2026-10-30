@@ -6,11 +6,17 @@ from .accept_controlers import AcceptControllers
 from .validators import *
 from models.gestor import FlightsGestor
 from views.main_view import MainWindow
+import psycopg
 import sys
 
 class MainController:
     def __init__(self) -> None:
         app = QtWidgets.QApplication(sys.argv)
+        try:
+            FlightsGestor.connect()
+        except psycopg.OperationalError:
+            QtWidgets.QMessageBox.critical(None, "Error de conexion", "No se pudo conectar a la base de datos. Verifique que PostgreSQL este activo y que DATABASE_URL sea correcta.")
+            sys.exit(1)
         self.mp = MainWindow()
         self.ap = AcceptControllers()
         self.cp = ConfirmControllers()
@@ -98,8 +104,9 @@ class MainController:
         elif self.mp.listOptions.currentIndex() == 0:
             if not is_name_valid(iattr[0]):
                 self.ap.show_accept_panel("El campo de destino no puede estar vacio ni contener numeros", False)
-            FlightsGestor.add_ifly(code, inner, airline, init, end, datetime, mark, model, matr, capacity, iattr[0], iattr[1], iattr[2])
-            self.ap.show_accept_panel("Agregado correctamente", True)
+            else:
+                FlightsGestor.add_ifly(code, inner, airline, init, end, datetime, mark, model, matr, capacity, iattr[0], iattr[1], iattr[2])
+                self.ap.show_accept_panel("Agregado correctamente", True)
         else:
             FlightsGestor.add_nfly(code, inner, airline, init, end, datetime, mark, model, matr, capacity)
             self.ap.show_accept_panel("Agregado correctamente", True)
@@ -180,10 +187,8 @@ class MainController:
         self.mp.maximize()
 
     def exit(self):
-        if FlightsGestor.close():
-            exit()
-        elif self.cp.show_confirm_panel("Ha habido un error al guardar los datos, de continuar probablemente hayan perdidas. Cerrar de todos modos?"):
-            exit()
+        FlightsGestor.close()
+        exit()
 
     def evts(self):
         self.mp.listAsideButton.clicked.connect(self.getListPanel)

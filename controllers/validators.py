@@ -10,9 +10,7 @@ def is_name_valid(*name : str) -> bool:
     return True
 
 def is_name_exist(name : str) -> bool:
-    if list(filter(lambda a : a.name == name, FlightsGestor.get_airlines())):
-        return False
-    return True
+    return not FlightsGestor.airline_name_exists(name)
 
 def is_fcode_valid(code : str, acode : str) -> bool:
     if not (len(code) >= 3 and code[:2] == acode and code[2:].isdigit()):
@@ -20,9 +18,7 @@ def is_fcode_valid(code : str, acode : str) -> bool:
     return True
 
 def is_fcode_exist(code : str) -> bool:
-    if list(filter(lambda f : f.code == code, FlightsGestor.get_nationals() + FlightsGestor.get_internationals())):
-        return False
-    return True
+    return not FlightsGestor.flight_code_exists(code)
 
 def is_acode_valid(code : str) -> bool:
     if not (len(code) == 2 and code.isalpha()):
@@ -30,9 +26,7 @@ def is_acode_valid(code : str) -> bool:
     return True
 
 def is_acode_exist(code : str) -> bool:
-    if list(filter(lambda a : a.code == code, FlightsGestor.get_airlines())):
-        return False
-    return True
+    return not FlightsGestor.airline_code_exists(code)
 
 def is_mm_valid(*text : str) -> bool:
     for i in text:

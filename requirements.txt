@@ -1,0 +1,2 @@
+psycopg[binary]>=3.2
+PyQt5>=5.15

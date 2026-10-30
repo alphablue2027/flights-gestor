@@ -33,7 +33,7 @@ A comprehensive desktop application for managing airlines, national flights, and
   - Scale number tracking
 - Add and remove flights with comprehensive validation
 - Flight code validation (must start with airline code)
-- Automatic data persistence to JSON files
+- PostgreSQL persistence: every change is saved immediately, with integrity enforced by the database (foreign keys, cascades and check constraints)
 
 ### Query and Analysis
 
@@ -66,7 +66,6 @@ flies-gestor/
 │   ├── flights.py       # NationalFly and InternationalFly classes
 │   ├── airline.py       # Airline model
 │   ├── plane.py         # Aircraft model
-│   ├── serializable.py  # Serialization interface
 │   └── link.py
 ├── views/               # UI components
 │   ├── main_view.py
@@ -76,15 +75,15 @@ flies-gestor/
 │       ├── main.ui
 │       ├── accept.ui
 │       └── confirm.ui
-├── data/                # JSON data storage
-│   ├── airlines.json
-│   ├── nationals.json
-│   └── internationals.json
+├── db/                  # PostgreSQL scripts
+│   ├── schema.sql       # Tables, constraints and indexes
+│   └── seed.sql         # Sample airlines and flights
 ├── diagrams/            # UML diagrams (PlantUML)
 │   ├── business/
 │   └── system/
 ├── icons/               # Application icons
 ├── main.py              # Application entry point
+├── requirements.txt     # Python dependencies
 ├── link.qrc             # Qt resource file
 ├── LICENSE.md           # License information
 └── README.md            # This file
@@ -92,9 +91,10 @@ flies-gestor/
 
 ## Requirements
 
-- **Python**: 3.8 or higher
+- **Python**: 3.10 or higher
+- **PostgreSQL**: 14 or higher
 - **PyQt5**: For the graphical user interface
-- **Standard Library**: `json`, `datetime`, `os`, `sys`
+- **psycopg 3**: PostgreSQL driver
 
 ## Installation
 
@@ -105,22 +105,28 @@ flies-gestor/
    cd flies-gestor
    ```
 
-2. **Install PyQt5**:
+2. **Install the dependencies** in a virtual environment:
 
    ```bash
-   pip install PyQt5
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   pip install -r requirements.txt
    ```
 
-   Or using a virtual environment (recommended):
-  
+3. **Create the database** and load the schema (plus the optional sample data):
+
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   pip install PyQt5
+   createdb flights_gestor
+   psql -d flights_gestor -f db/schema.sql -f db/seed.sql
    ```
 
-3. **Verify data directory**:
-   The application will automatically create the `data/` directory if it doesn't exist. Ensure you have write permissions in the project directory.
+   `schema.sql` drops and recreates the tables, so running it again resets all data.
+
+4. **Configure the connection** (optional): the app reads `DATABASE_URL` and defaults to `postgresql:///flights_gestor` (local server, current OS user). For another server:
+
+   ```bash
+   export DATABASE_URL="postgresql://user:password@host:5432/flights_gestor"
+   ```
 
 ## Usage
 
@@ -163,13 +169,13 @@ python main.py
 
 ### Data Persistence
 
-All data is automatically saved to JSON files in the `data/` directory:
+Data lives in PostgreSQL across three tables:
 
-- `airlines.json`: Airline information
-- `nationals.json`: National flight data
-- `internationals.json`: International flight data
+- `airlines`: Airline information
+- `flights`: Fields shared by every flight, including the aircraft
+- `international_flights`: International-only fields (destination country, scales), linked one-to-one to `flights`
 
-Data is saved when the application closes. If there's an error saving, a confirmation dialog will warn you before closing.
+Every add or delete is written immediately; there is no save step on close. Deleting an airline removes its flights through `ON DELETE CASCADE`. If the database is unreachable at startup, the app shows an error dialog and exits.
 
 ## Architecture
 
@@ -177,8 +183,8 @@ The application follows the **Model-View-Controller (MVC)** architectural patter
 
 - **Models** (`models/`): Business logic and data structures
   - `FlightsGestor`: Main manager class for flights and airlines
-  - `FilesGestor`: Handles file I/O operations
-  - Flight and airline model classes with serialization support
+  - SQL queries through psycopg 3, mapping rows to model objects
+  - Flight, airline and plane model classes
 
 - **Views** (`views/`): User interface components
   - PyQt5-based windows and dialogs

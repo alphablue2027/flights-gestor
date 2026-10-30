@@ -2,156 +2,160 @@
 # Copyright (C) 2025 Ordnay Perez Hernandez - ¡Uso comercial prohibido sin permiso!
 from .flights import NationalFly, InternationalFly
 from .airline import Airline
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from psycopg.rows import dict_row
 import os
-import json
+import psycopg
 
-class FilesGestor:
-    def __init__(self):
-        self.verify_files()
-    
-    def verify_files(self) -> bool:
-        try:
-            os.makedirs("./data/", exist_ok=True)
-            return True
-        except OSError:
-            return False
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql:///flights_gestor")
 
-    def __list_serializer(self, l : list) -> list:
-        sl = list(map(lambda i : i.serialize(), l))
-        return sl
-    
-    def save(self, nationals : list[NationalFly], internationals : list, airlines : list) -> bool:
-        self.verify_files()
-        nf = self.__list_serializer(nationals) 
-        inf = self.__list_serializer(internationals)
-        air = self.__list_serializer(airlines)
-        try:
-            with open("./data/nationals.json", 'w', encoding='utf-8') as file:
-                json.dump(nf, file, indent=4, ensure_ascii=False)
-            with open("./data/internationals.json", 'w', encoding='utf-8') as file:
-                json.dump(inf, file, indent=4, ensure_ascii=False)
-            with open("./data/airlines.json", 'w', encoding='utf-8') as file:
-                json.dump(air, file, indent=4, ensure_ascii=False)
-            return True
-        except Exception as e:
-            print(e)
-            return False
+FLIGHTS_QUERY = """
+    SELECT f.code, f.is_inbound, a.name AS airline, f.init_city, f.end_city, f.departure,
+        f.plane_mark, f.plane_model, f.plane_matricule, f.plane_capacity,
+        i.destiny, i.scale, i.scale_number
+    FROM flights f
+    JOIN airlines a ON a.code = f.airline_code
+    LEFT JOIN international_flights i ON i.flight_code = f.code
+"""
+NATIONALS_QUERY = FLIGHTS_QUERY + " WHERE i.flight_code IS NULL"
+INTERNATIONALS_QUERY = FLIGHTS_QUERY + " WHERE i.flight_code IS NOT NULL"
+INSERT_FLIGHT = """
+    INSERT INTO flights (code, is_inbound, airline_code, init_city, end_city, departure,
+        plane_mark, plane_model, plane_matricule, plane_capacity)
+    VALUES (%s, %s, (SELECT code FROM airlines WHERE name = %s), %s, %s, %s, %s, %s, %s, %s)
+"""
 
-    def read(self) -> tuple[list[NationalFly], list[InternationalFly], list[Airline]]:
-        nationals = list()
-        internationals = list()
-        airlines = list()
-        try:
-            with open("./data/nationals.json", 'r', encoding='utf-8') as file:
-                nationals = json.load(file, object_hook= NationalFly.deserialize)
-            with open("./data/internationals.json", 'r', encoding='utf-8') as file:
-                internationals = json.load(file, object_hook=InternationalFly.deserialize)
-            with open("./data/airlines.json", 'r', encoding='utf-8') as file:
-                airlines = json.load(file, object_hook= Airline.deserialize)
-        except Exception as e:
-            pass
-        finally:
-            return nationals, internationals, airlines
+def to_national(row : dict) -> NationalFly:
+    return NationalFly(row['code'], row['is_inbound'], row['airline'], row['init_city'], row['end_city'], row['departure'],
+                       row['plane_mark'], row['plane_model'], row['plane_matricule'], row['plane_capacity'])
+
+def to_international(row : dict) -> InternationalFly:
+    return InternationalFly(row['code'], row['is_inbound'], row['airline'], row['init_city'], row['end_city'], row['departure'],
+                            row['plane_mark'], row['plane_model'], row['plane_matricule'], row['plane_capacity'],
+                            row['destiny'], row['scale'], row['scale_number'])
+
+def to_airline(row : dict) -> Airline:
+    return Airline(row['name'], row['code'], row['planes_number'], row['nationality'])
+
+def day_range(day : date) -> tuple[datetime, datetime]:
+    start = datetime.combine(day, datetime.min.time())
+    return start, start + timedelta(days=1)
 
 
 class FlightsGestor:
-    __files = FilesGestor()
-    __nationals, __internationals, __airlines = __files.read()
-    
+    __conn : psycopg.Connection
+
+    @classmethod
+    def connect(cls):
+        cls.__conn = psycopg.connect(DATABASE_URL, row_factory=dict_row, autocommit=True)
+
     @classmethod
     def get_nationals(cls) -> list[NationalFly]:
-        return cls.__nationals
-    
+        rows = cls.__conn.execute(NATIONALS_QUERY + " ORDER BY f.departure").fetchall()
+        return list(map(to_national, rows))
+
     @classmethod
     def get_internationals(cls) -> list[InternationalFly]:
-        return cls.__internationals
-    
+        rows = cls.__conn.execute(INTERNATIONALS_QUERY + " ORDER BY f.departure").fetchall()
+        return list(map(to_international, rows))
+
     @classmethod
     def get_airlines(cls) -> list[Airline]:
-        return cls.__airlines
-    
+        rows = cls.__conn.execute("SELECT * FROM airlines ORDER BY name").fetchall()
+        return list(map(to_airline, rows))
+
     @classmethod
     def add_ifly(cls, code : str, inner: bool, airline : str, init_city : str, end_city : str, datetime : datetime, mark : str, model : str, matr : str, capacity : int, destiny : str, scale : bool, number : int):
-        cls.__internationals.append(InternationalFly(code, inner, airline, init_city, end_city, datetime, mark, model, matr, capacity, destiny, scale, number))
-    
+        with cls.__conn.transaction():
+            cls.__conn.execute(INSERT_FLIGHT, (code, inner, airline, init_city, end_city, datetime, mark, model, matr, capacity))
+            cls.__conn.execute(
+                "INSERT INTO international_flights (flight_code, destiny, scale, scale_number) VALUES (%s, %s, %s, %s)",
+                (code, destiny, scale, number)
+            )
+
     @classmethod
     def add_nfly(cls, code : str, inner: bool, airline : str, init_city : str, end_city : str, datetime : datetime, mark : str, model : str, matr : str, capacity : int):
-        cls.__nationals.append(NationalFly(code, inner, airline, init_city, end_city, datetime, mark, model, matr, capacity))
-    
+        cls.__conn.execute(INSERT_FLIGHT, (code, inner, airline, init_city, end_city, datetime, mark, model, matr, capacity))
+
     @classmethod
     def del_fly(cls, code: str) -> bool:
-        finded = False
-        for i in cls.get_nationals():
-            if i.code == code.upper():
-                cls.__nationals.remove(i)
-                finded = True
-        for i in cls.get_internationals():
-            if i.code == code.upper():
-                cls.__internationals.remove(i)
-                finded = True
-        return finded
-    
+        return cls.__conn.execute("DELETE FROM flights WHERE code = %s", (code.upper(),)).rowcount > 0
+
     @classmethod
     def add_airline(cls, code : str, name : str, nation : str, planes : int):
-        cls.__airlines.append(Airline(name, code, planes, nation))
-        print(cls.__airlines)
+        cls.__conn.execute(
+            "INSERT INTO airlines (code, name, planes_number, nationality) VALUES (%s, %s, %s, %s)",
+            (code, name, planes, nation)
+        )
 
     @classmethod
     def del_airline(cls, code : str) -> bool:
-        finded = False
-        for i in cls.__airlines:
-            if i.code == code.upper():
-                cls.__airlines.remove(i)
-                finded = True
-        cls.clean_links()
-        return finded
-    
+        return cls.__conn.execute("DELETE FROM airlines WHERE code = %s", (code.upper(),)).rowcount > 0
+
     @classmethod
     def get_airline(cls, code : str) -> Airline | None:
-        flights = cls.get_nationals() + cls.get_internationals()
-        for i in flights:
-            if i.code == code.upper():
-                try:
-                    return list(filter(lambda a : i.airline == a.name, cls.__airlines))[0]
-                except IndexError:
-                    pass
-    
+        row = cls.__conn.execute(
+            "SELECT a.* FROM airlines a JOIN flights f ON f.airline_code = a.code WHERE f.code = %s",
+            (code.upper(),)
+        ).fetchone()
+        return to_airline(row) if row else None
+
     @classmethod
     def get_airline_code(cls, name : str) -> str:
-        return list(filter(lambda a : a.name == name, cls.__airlines))[0].code
+        return cls.__conn.execute("SELECT code FROM airlines WHERE name = %s", (name,)).fetchone()['code']
+
+    @classmethod
+    def airline_name_exists(cls, name : str) -> bool:
+        return cls.__conn.execute("SELECT EXISTS (SELECT 1 FROM airlines WHERE name = %s)", (name,)).fetchone()['exists']
+
+    @classmethod
+    def airline_code_exists(cls, code : str) -> bool:
+        return cls.__conn.execute("SELECT EXISTS (SELECT 1 FROM airlines WHERE code = %s)", (code,)).fetchone()['exists']
+
+    @classmethod
+    def flight_code_exists(cls, code : str) -> bool:
+        return cls.__conn.execute("SELECT EXISTS (SELECT 1 FROM flights WHERE code = %s)", (code,)).fetchone()['exists']
 
     @classmethod
     def get_internationals_porcent(cls, mark : str, name : str) -> tuple[int, int, int]:
-        flights = list(filter(lambda f : f.airline == name, cls.get_internationals()))
-        c = len(list(filter(lambda f : f.plane.mark == mark, flights)))
-        return c, len(flights), c*100//len(flights)
-    
+        row = cls.__conn.execute(
+            """
+            SELECT count(*) FILTER (WHERE f.plane_mark = %s) AS marked, count(*) AS total
+            FROM flights f
+            JOIN international_flights i ON i.flight_code = f.code
+            JOIN airlines a ON a.code = f.airline_code
+            WHERE a.name = %s
+            """,
+            (mark, name)
+        ).fetchone()
+        if not row['total']:
+            return 0, 0, 0
+        return row['marked'], row['total'], row['marked']*100//row['total']
+
     @classmethod
     def get_passagers_avg(cls, destiny: str) -> tuple[int, list[InternationalFly]]:
-        l = list(filter(lambda f: f.destiny == destiny, cls.get_internationals()))
-        s = sum(list(map(lambda f : f.plane.capacity, l)))
-        return s//len(l), l
-    
+        rows = cls.__conn.execute(INTERNATIONALS_QUERY + " AND i.destiny = %s ORDER BY f.departure", (destiny,)).fetchall()
+        flights = list(map(to_international, rows))
+        if not flights:
+            return 0, flights
+        return sum(map(lambda f : f.plane.capacity, flights))//len(flights), flights
+
     @classmethod
     def get_outers_nflights(cls, date: date) -> list[NationalFly]:
-        flights = sorted(list(filter(lambda f : not f.inner and f.datetime.date() == date, cls.get_nationals())), key= lambda f: f.datetime.time())
-        return flights
-    
+        rows = cls.__conn.execute(
+            NATIONALS_QUERY + " AND NOT f.is_inbound AND f.departure >= %s AND f.departure < %s ORDER BY f.departure",
+            day_range(date)
+        ).fetchall()
+        return list(map(to_national, rows))
+
     @classmethod
     def get_scalest_fly(cls, date: date) -> InternationalFly | None:
-        try:
-            sf = sorted(list(filter(lambda f : not f.inner and f.datetime.date() == date, cls.get_internationals())), key= lambda f: f.scale_number, reverse=True)[0]
-            return sf
-        except Exception:
-            return None
-        
+        row = cls.__conn.execute(
+            INTERNATIONALS_QUERY + " AND NOT f.is_inbound AND f.departure >= %s AND f.departure < %s ORDER BY i.scale_number DESC LIMIT 1",
+            day_range(date)
+        ).fetchone()
+        return to_international(row) if row else None
+
     @classmethod
-    def clean_links(cls):
-        air_names = list(map(lambda a : a.name, cls.__airlines))
-        cls.__internationals = list(filter(lambda f : f.airline in air_names, cls.get_internationals()))
-        cls.__nationals = list(filter(lambda f : f.airline in air_names, cls.get_nationals()))
-    
-    @classmethod
-    def close(cls) -> bool:
-        return cls.__files.save(cls.get_nationals(), cls.get_internationals(), cls.get_airlines())
+    def close(cls):
+        cls.__conn.close()

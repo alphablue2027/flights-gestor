@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-with-Commons-Clause
 # Copyright (C) 2025 Ordnay Perez Hernandez - ¡Uso comercial prohibido sin permiso!
-from .serializable import Serializable
 
-class Plane(Serializable):
+class Plane:
     def __init__(self, mark : str, model : str, matricule : str, capacity : int):
         self._mark = mark
         self._model = model
@@ -40,20 +39,3 @@ class Plane(Serializable):
     @capacity.setter
     def capacity(self, value : int):
         self._capacity = value
-    
-    def serialize(self) -> dict:
-        return {
-            'mark' : self.mark,
-            'model' : self.model,
-            'matricule' : self.matricule,
-            'capacity' : self.capacity
-        }
-    
-    @classmethod
-    def deserialize(cls, data : dict) -> object:
-        return cls(
-            mark = data['mark'],
-            model = data['model'],
-            matricule = data['matricule'],
-            capacity = data['capacity']
-        )
